@@ -1,86 +1,51 @@
-import numpy as np
-import pandas as pd
-import yfinance as yf
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.metrics import mean_absolute_error, r2_score
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense, Dropout
-import plotly.graph_objects as go
-import streamlit as st
+🧠 Project Idea and Development Process
+The motivation behind this project was to forecast the EUR/CHF exchange rate using deep learning, while incorporating macro-financial events — specifically, interventions by the Swiss National Bank (SNB) — as additional signals in the model. Here's a breakdown of how the idea evolved and how I implemented the solution:
 
-# === STREAMLIT CONFIGURATION ===
-st.set_page_config(page_title="EUR/CHF LSTM Forecast", layout="wide")
-st.title("EUR/CHF Forecast with LSTM (Including SNB Interventions)")
-st.markdown("This project forecasts EUR/CHF exchange rate movements using an LSTM model, incorporating manually tagged SNB interventions. Built with TensorFlow, Plotly, and Streamlit.")
+🔹 1. Initial Concept
+As part of my interest in both machine learning and financial markets, I was particularly intrigued by the role of central bank interventions on currency pairs. The EUR/CHF pair is significantly affected by the SNB, so I aimed to model those effects using an LSTM neural network.
 
-# === DATA LOADING ===
-@st.cache_data
-def load_data():
-    df = yf.download("EURCHF=X", start="2010-01-01", end="2024-12-31")[["Close"]].dropna()
-    df = df.rename(columns={"Close": "EURCHF"})
-    df.index = pd.to_datetime(df.index)
+🔹 2. Data Collection
+I used the yfinance library to retrieve historical EUR/CHF exchange rate data from 2010 to 2024. Then, I manually created a small dataset of synthetic SNB intervention dates, marking them with a binary feature.
 
-    # Synthetic SNB intervention markers
-    interventions = pd.DataFrame({
-        "Date": pd.to_datetime([
-            "2011-08-03", "2011-09-06", "2015-01-15", "2020-03-19", "2022-06-16"
-        ]),
-        "Intervention": 1
-    })
-    df["Intervention"] = 0
-    df.loc[df.index.isin(interventions["Date"]), "Intervention"] = 1
+🔹 3. Feature Engineering
+For each time step in the series, I included:
 
-    return df
+The normalized EUR/CHF close price
 
-df = load_data()
+A binary variable indicating whether an SNB intervention occurred that day
 
-# === DATA PREPROCESSING ===
-scaler = MinMaxScaler()
-df[["EURCHF"]] = scaler.fit_transform(df[["EURCHF"]])
-window_size = 30
-X, y, y_dates = [], [], []
+I used a rolling window approach (30 days) to create sequences that serve as input for the LSTM, which learns patterns from historical price behavior and intervention contexts.
 
-for i in range(window_size, len(df)):
-    features = df.iloc[i - window_size:i][["EURCHF", "Intervention"]].values
-    X.append(features)
-    y.append(df.iloc[i]["EURCHF"])
-    y_dates.append(df.index[i])  # Capture target date
+🔹 4. Model Architecture
+I built a 2-layer LSTM model using TensorFlow/Keras, with dropout regularization to prevent overfitting. The model architecture was:
 
-X, y, y_dates = np.array(X), np.array(y), np.array(y_dates)
+LSTM(64) with return_sequences=True
 
-# === TRAIN/TEST SPLIT ===
-split = int(len(X) * 0.8)
-X_train, X_test = X[:split], X[split:]
-y_train, y_test = y[:split], y[split:]
-test_dates = y_dates[split:]
+Dropout(0.2)
 
-# === LSTM MODEL ===
-model = Sequential([
-    LSTM(64, return_sequences=True, input_shape=(window_size, 2)),
-    Dropout(0.2),
-    LSTM(32),
-    Dense(1)
-])
+LSTM(32)
 
-model.compile(optimizer="adam", loss="mse")
-with st.spinner("Training LSTM model..."):
-    model.fit(X_train, y_train, epochs=15, batch_size=32, verbose=0)
+Dense(1) to predict the next day's price
 
-# === PREDICTION & EVALUATION ===
-y_pred = model.predict(X_test)
-mae = mean_absolute_error(y_test, y_pred)
-r2 = r2_score(y_test, y_pred)
+🔹 5. Training and Evaluation
+The model was trained on 80% of the data and tested on the remaining 20%. Evaluation metrics included:
 
-# === RESULTS DISPLAY ===
-st.subheader("📈 Model Performance")
-st.markdown(f"**MAE**: `{mae:.4f}` &nbsp;&nbsp;&nbsp; **R²**: `{r2:.4f}`")
+MAE (Mean Absolute Error)
 
-# === VISUALIZATION ===
-y_test_rescaled = scaler.inverse_transform(y_test.reshape(-1, 1)).flatten()
-y_pred_rescaled = scaler.inverse_transform(y_pred).flatten()
+R² score for goodness-of-fit
 
-fig = go.Figure()
-fig.add_trace(go.Scatter(x=test_dates, y=y_test_rescaled, name="Actual"))
-fig.add_trace(go.Scatter(x=test_dates, y=y_pred_rescaled, name="Predicted"))
-fig.update_layout(title="EUR/CHF Forecast with LSTM", xaxis_title="Date", yaxis_title="EUR/CHF")
-fig.show()
+🔹 6. Visualization
+I used Plotly to create an interactive chart comparing the actual vs predicted EUR/CHF values over time. This helps visually assess how well the model captured price dynamics.
+
+🔹 7. User Interface
+To make the project more accessible and visually appealing, I built a dashboard using Streamlit, which:
+
+Loads and preprocesses the data
+
+Trains the model in real time
+
+Displays performance metrics
+
+Renders the forecast plot interactively
+
+This project demonstrates how combining domain knowledge (SNB interventions) with machine learning techniques (LSTM) can enhance forecasting models in financial applications.
